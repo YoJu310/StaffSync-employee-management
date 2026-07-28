@@ -9,6 +9,7 @@ import connectDB from "./config/db.js";
 import authRouter from "./routes/AuthRoutes.js";
 import employeesRouter from "./routes/EmployeeRoutes.js";
 import profileRouter from "./routes/ProfileRoutes.js";
+import payslipRouter from "./routes/PayslipsRoutes.js";
  
 
 const app = express()
@@ -23,5 +24,6 @@ app.get("/", (req, res) => res.send("StaffSync Server is Running!!"))
 app.use("/api/auth", authRouter)
 app.use("/api/employees", employeesRouter)
 app.use("/api/profile", profileRouter)
+app.use("/api/payslips", payslipRouter)
 await connectDB()
 app.listen(PORT, () => console.log(`Server running on  http://localhost:${PORT}`))
