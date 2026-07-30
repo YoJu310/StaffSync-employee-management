@@ -1,0 +1,159 @@
+import { Inngest } from "inngest";
+import Attendance from "../models/Attendance.js";
+import Employee from "../models/Employee.js";
+import LeaveApplication from "../models/LeaveApplication.js";
+import sendEmail from "../config/nodemailer.js";
+
+const getDurationMs = (envName, fallbackMs) => {
+    const rawValue = Number(process.env[envName]);
+    return Number.isFinite(rawValue) && rawValue > 0 ? rawValue : fallbackMs;
+};
+
+const checkoutReminderDelayMs = getDurationMs("CHECKOUT_REMINDER_DELAY_MS", 9 * 60 * 60 * 1000);
+const autoCheckoutGraceMs = getDurationMs("AUTO_CHECKOUT_GRACE_MS", 60 * 60 * 1000);
+
+// Create a client to send and receive events
+export const inngest = new Inngest({
+    id: "fullstack-ems",
+    eventKey: process.env.INNGEST_EVENT_KEY,
+    signingKey: process.env.INNGEST_SIGNING_KEY,
+});
+
+// Auto Check out for employees
+const autoCheckOut = inngest.createFunction(
+    {
+        id: "auto-check-out", triggers: [{event: "employee/check-out"}]
+    },
+  async ({ event, step }) => {
+    const {employeeId, attendanceId} = event.data;
+
+    // Wait for the configured reminder delay (default: 9 hours)
+    await step.sleepUntil("wait-for-the-9-hours", new Date(Date.now() + checkoutReminderDelayMs))
+
+    // Get attendance data
+    let attendance = await Attendance.findById(attendanceId)
+
+    if(!attendance?.checkOut) {
+        // Get employee data
+        const employee = await Employee.findById(employeeId)
+
+        // Send reminder email
+        await sendEmail({
+        to: employee.email,
+        subject: "Attendance Check-Out Reminder",
+        body: ` <div style="max-width: 600px; font-family: sans-serif;">
+                <h2>Hi ${employee.firstName}, 👋🏻</h2>
+                <p style="font-size: 16px;">You have a check-in in ${employee.department} today:</p>
+                
+                <p style="font-size: 18px; font-weight: bold; color: #007bff; margin: 8px 0;">
+                    ${new Date(attendance?.checkIn).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: '2-digit', minute: '2-digit' })}
+                </p>
+                
+                <p style="font-size: 16px;">Please make sure to check-out in one hour.</p>
+                <p style="font-size: 16px;">If you have any questions, please contact your admin.</p>
+                <br/>
+                <p style="font-size: 16px; margin: 0;">Best Regards,</p>
+                <p style="font-size: 16px; font-weight: bold; margin: 0;">EMS</p>
+                </div>`
+        });
+
+        // After the configured grace window, mark attendance as checkout with status "LATE"
+        await step.sleepUntil("wait-for-the-1-hour", new Date(Date.now() + autoCheckoutGraceMs))
+
+        attendance = await Attendance.findById(attendanceId)
+        if(!attendance?.checkOut) {
+            attendance.checkOut = new Date(attendance.checkIn).getTime() + 4 * 60 * 60 * 1000;
+            attendance.workingHours = 4;
+            attendance.dayType = "Half Day";
+            attendance.status = "LATE";
+            await attendance.save();
+        }
+    }
+  },
+);
+ 
+// Cron: Check attendance at 11:30 AM IST (06:00 UTC) and email absent employees
+const attendanceReminderCron = inngest.createFunction(
+    {
+        id: "attendance-reminder-cron", 
+        triggers: [{cron: "TZ=Asia/Kolkata 30 11 * * *"}] 
+    },
+    async ({ step }) => {
+        
+        // Step 1, 2, 3, 4 sab ko ek hi step mein h
+        const data = await step.run("fetch-all-required-data", async () => {
+            // A. Date setup
+            const startUTC = new Date(new Date().toLocaleDateString("en-CA", {timeZone: "Asia/Kolkata"}) + "T00:00:00+05:30");
+            const endUTC = new Date(startUTC.getTime() + 24 * 60 * 60 * 1000);
+
+            // B. Active Employees fetch (Step 2)
+            const employees = await Employee.find({ isDeleted: false, employmentStatus: "ACTIVE" }).lean();
+            const activeEmployees = employees.map((e) => ({
+                _id: e._id.toString(), firstName: e.firstName, lastName: e.lastName, email: e.email, department: e.department
+            }));
+
+            // C. Leaves fetch (Step 3)
+            const leaves = await LeaveApplication.find({
+                status: "APPROVED", startDate: { $lte: endUTC }, endDate: { $gte: startUTC }
+            }).lean();
+            const onLeaveIds = leaves.map((l) => l.employeeId.toString());
+
+            // D. Attendance fetch (Step 4)
+            const attendances = await Attendance.find({ date: { $gte: startUTC, $lt: endUTC } }).lean();
+            const checkedInIds = attendances.map((a) => a.employeeId.toString());
+
+            // Saara data ek sath return kar do
+            return { activeEmployees, onLeaveIds, checkedInIds };
+        });
+
+        // Data ko bahar nikal lo
+        const { activeEmployees, onLeaveIds, checkedInIds } = data;
+
+        // Step 5: Absent employees filter karo 
+        const absentEmployees = activeEmployees.filter(
+            (emp) => !onLeaveIds.includes(emp._id) && !checkedInIds.includes(emp._id)
+        );
+
+        // Step 6: Email bhejna 
+        let emailsSentCount = 0;
+        if (absentEmployees.length > 0) {
+            await step.run("send-reminder-emails", async () => {
+                const emailPromises = absentEmployees.map((emp) => {
+                    return sendEmail({
+                        to: emp.email,
+                        subject: `Attendance Reminder - Please Mark Your Attendance`,
+                        body: `<div style="max-width: 600px; font-family: Arial, sans-serif;">
+                                <h2>Hi ${emp.firstName}, 👋</h2>
+                                <p style="font-size: 16px;">We noticed you haven't marked your attendance yet today.</p>
+                                <p style="font-size: 16px;">The deadline was <strong>11:30 AM</strong> and your attendance is still missing.</p>
+                                <p style="font-size: 16px;">Please check in as soon as possible or contact your admin if you're facing any issues.</p>
+                                <br />
+                                <p style="font-size: 14px; color: #666;">Department: ${emp.department}</p>
+                                <br />
+                                <p style="font-size: 16px;">Best Regards,</p>
+                                <p style="font-size: 16px;"><strong>QuickEMS</strong></p>
+                            </div>` 
+                    });
+                });
+                
+                await Promise.all(emailPromises);
+                return { emailsSent: absentEmployees.length }; 
+            });
+            emailsSentCount = absentEmployees.length;
+        }
+
+        return {
+            totalActive: activeEmployees.length,
+            onLeave: onLeaveIds.length,
+            checkedIn: checkedInIds.length,
+            absent: absentEmployees.length,
+            emailsSent: emailsSentCount
+        };
+    }
+);
+
+// Create an empty array where we'll export future Inngest functions
+export const functions = [
+    autoCheckOut,
+    attendanceReminderCron
+];
