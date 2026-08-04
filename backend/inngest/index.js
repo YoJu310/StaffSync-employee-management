@@ -71,7 +71,45 @@ const autoCheckOut = inngest.createFunction(
     }
   },
 );
- 
+
+// Send Email to admin, If admin doesn't take action on leave application within 24 hours
+const leaveApplicationReminder = inngest.createFunction(
+    {
+        id: "leave-application-reminder", triggers: [{event: "leave/pending"}]
+    },
+    async ({ event, step }) => {
+        const { leaveApplicationId } = event.data;
+
+        //Wait for 24 hours
+        await step.sleepUntil("wait-for-the-24-hours", new Date(new Date().getTime() + 24 * 60 * 60 * 1000))
+
+        const leaveApplication = await LeaveApplication.findById(leaveApplicationId)
+
+        if(leaveApplication?.status === "PENDING") {
+            const employee = await Employee.findById(leaveApplication.employeeId)
+
+            // Send reminder email to admin to take action on leave application
+            await sendEmail({
+                to: process.env.ADMIN_EMAIL,
+                subject: `Leave Application Reminder`,
+                body: `<div style="max-width: 600px; font-family: sans-serif;">
+                        <h2>Hi Admin, 👋🏻</h2>
+                        <p style="font-size: 16px;">You have a pending leave application from <strong>${employee.firstName}</strong> (${employee.department}):</p>
+                        
+                        <p style="font-size: 18px; font-weight: bold; color: #007bff; margin: 8px 0;">
+                            Starting Date: ${new Date(leaveApplication?.startDate).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" })}
+                        </p>
+                        
+                        <p style="font-size: 16px;">Please make sure to take action on this leave application from the admin dashboard.</p>
+                        <br/>
+                        <p style="font-size: 16px; margin: 0;">Best Regards,</p>
+                        <p style="font-size: 16px; font-weight: bold; margin: 0;">EMS</p>
+                        </div>`
+            });
+        }
+    }
+);
+
 // Cron: Check attendance at 11:30 AM IST (06:00 UTC) and email absent employees
 const attendanceReminderCron = inngest.createFunction(
     {
@@ -155,5 +193,6 @@ const attendanceReminderCron = inngest.createFunction(
 // Create an empty array where we'll export future Inngest functions
 export const functions = [
     autoCheckOut,
+    leaveApplicationReminder,
     attendanceReminderCron
 ];
