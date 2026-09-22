@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom"
 import LoginLanding from "./pages/LoginLanding"
 import Layout from "./pages/Layout"
 import Dashboard from "./pages/Dashboard"
+import Employees from "./pages/Employees"
 import LoginForm from "./components/LoginForm"
 
 const App = () => {
@@ -19,6 +20,7 @@ const App = () => {
   
         <Route element={<Layout />}>
           <Route path="/dashboard" element={ <Dashboard /> } />  
+          <Route path="/employees" element={ <Employees /> } /> 
              
         </Route>
       </Routes>
