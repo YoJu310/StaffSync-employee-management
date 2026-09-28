@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { dummyAdminDashboardData, dummyEmployeeDashboardData } from "../assets/assets"
 import Loading from "../components/Loading"
+import EmployeeDashboard from "../components/EmployeeDashboard"
 import AdminDashboard from "../components/AdminDashboard"
 import api from "../api/axios"
 import toast from "react-hot-toast"
@@ -19,7 +20,7 @@ const Dashboard = () => {
   if(data.role === "ADMIN") {
     return <AdminDashboard data={data} />
   } else {
-    return <div>Employee Dashboard</div>
+    return <EmployeeDashboard data={data} />
 
   }
 
