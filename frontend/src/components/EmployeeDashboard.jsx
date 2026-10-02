@@ -51,7 +51,7 @@ const EmployeeDashboard = ({data}) => {
             Mark Attendance <ArrowRightIcon className='w-4 h-4' />
         </Link>
 
-        <Link to="/" className='btn-secondary text-center'>
+        <Link to="/leave" className='btn-secondary text-center'>
             Apply for Leave
         </Link>
       </div>
