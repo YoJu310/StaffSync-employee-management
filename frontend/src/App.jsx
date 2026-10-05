@@ -6,6 +6,7 @@ import Dashboard from "./pages/Dashboard"
 import Employees from "./pages/Employees"
 import Attendance from "./pages/Attendance"
 import Leave from "./pages/Leave"
+import Payslips from "./pages/Payslips"
 import LoginForm from "./components/LoginForm"
 
 const App = () => {
@@ -24,7 +25,8 @@ const App = () => {
           <Route path="/dashboard" element={ <Dashboard /> } />  
           <Route path="/employees" element={ <Employees /> } /> 
           <Route path="/attendance" element={ <Attendance /> } />
-          <Route path="/leave" element={ <Leave /> } />  
+          <Route path="/leave" element={ <Leave /> } /> 
+          <Route path="/payslips" element={ <Payslips /> } /> 
              
         </Route>
       </Routes>
